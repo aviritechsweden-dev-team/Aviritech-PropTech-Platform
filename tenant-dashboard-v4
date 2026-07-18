@@ -1,0 +1,386 @@
+.drw-foot{padding:14px 18px;border-top:1px solid #EAECF0;font-size:10px;color:#667085;text-align:center;}
+
+/* MODALS */
+.avt-modal-ov{display:none !important;position:fixed !important;inset:0 !important;
+  background:rgba(16,24,40,.55) !important;z-index:99999 !important;
+  align-items:flex-end !important;justify-content:center !important;padding:0 !important;}
+.avt-modal-ov.on{display:flex !important;}
+@media(min-width:600px){.avt-modal-ov{align-items:center !important;padding:20px !important;}}
+.avt-modal-box{background:#fff !important;width:100% !important;max-width:480px !important;
+  border-radius:20px 20px 0 0 !important;padding:22px 20px 30px !important;
+  animation:avt-rise .22s ease !important;position:relative !important;
+  max-height:88vh !important;overflow-y:auto !important;}
+@media(min-width:600px){.avt-modal-box{border-radius:20px !important;max-width:440px !important;}}
+@keyframes avt-rise{from{transform:translateY(30px);opacity:0;}to{transform:translateY(0);opacity:1;}}
+.avt-mh{display:flex !important;justify-content:space-between !important;align-items:center !important;margin-bottom:18px !important;}
+.avt-mt{font-size:16px;font-weight:800;font-family:'Syne',sans-serif;color:#101828;}
+.<?php
+/**
+ * AVIRITECH PROPTECH — TENANT DASHBOARD v4
+ * WordPress drop-in | Insert PHP Code plugin / shortcode
+ *
+ * v4 CHANGES (from the v3 that was pasted in, which cut off before
+ * any JS/modal/footer markup — this is a full rebuild, not a patch):
+ *  - Theme: black + yellow (was blue + yellow)
+ *  - Property Store -> real Browse URL, Marketplace -> real Marketplace URL
+ *  - Services & Vendors is now LIVE and opens a working "Book a Service"
+ *    modal, submitting to the Aviritech Property Manager plugin's real
+ *    avt_book_service_request AJAX action (extended in that plugin —
+ *    v1.4.0 — to accept tenant requests, not just landlord ones)
+ *  - Inspection booking is a real modal (property picker + date/time
+ *    picker) submitting to that plugin's avt_book_inspection action
+ *  - Transaction History now merges real inspection-booking rows
+ *    (queried live for the current user) with the existing demo
+ *    financial entries — real ones are clearly distinguishable
+ *  - Every non-"soon" Quick Access item gets a loading state on click
+ *  - Desktop (900px+): two-column layout. Mobile layout is untouched.
+ *  - Footer: Browse -> Property Store, "Activities" -> "History"
+ *    (scrolls to the transaction list), Profile -> Ultimate Member
+ *    profile URL when UM is active, safe fallback otherwise
+ *
+ * WHY THE OLD BOOK SERVICE / INSPECTION FORMS DIDN'T SUBMIT:
+ * admin-ajax.php never renders shortcodes or page content — it only
+ * boots WordPress core + active plugins. Any add_action('wp_ajax_...')
+ * registered from PHP living inside a shortcode/page-content snippet
+ * (rather than a real plugin file) never actually gets registered by
+ * the time an AJAX request arrives, because that snippet's code never
+ * runs during an AJAX request. This version instead calls the
+ * Property Manager plugin's real endpoints, which ARE properly
+ * registered on every request via normal plugin loading.
+ */
+
+$current_user_name = 'Jaycobs';
+$current_user_id = 0;
+if (function_exists('wp_get_current_user')) {
+    try {
+        $u = wp_get_current_user();
+        if (!empty($u->display_name)) $current_user_name = $u->display_name;
+        if (function_exists('get_current_user_id')) $current_user_id = (int) get_current_user_id();
+    } catch (Throwable $e) {}
+}
+
+$logout_url = '#';
+if (function_exists('wp_logout_url') && function_exists('home_url') && function_exists('esc_url')) {
+    try { $logout_url = esc_url(wp_logout_url(home_url())); } catch (Throwable $e) {}
+}
+
+// Ultimate Member profile URL — falls back safely if UM isn't active.
+$profile_url = '#';
+if (function_exists('um_user_profile_url')) {
+    try { $profile_url = esc_url(um_user_profile_url($current_user_id)); } catch (Throwable $e) {}
+} elseif (function_exists('home_url')) {
+    $profile_url = esc_url(home_url('/profile/'));
+}
+
+$browse_url = 'https://de-lightanddelicioustaste.ng/proptechx/browse/';
+$marketplace_url = 'https://de-lightanddelicioustaste.ng/proptechx/marketplace/';
+
+// AJAX bridge into the real, properly-registered Property Manager
+// plugin endpoints (avt_book_inspection, avt_book_service_request).
+$ajax_url = function_exists('admin_url') ? admin_url('admin-ajax.php') : '#';
+$avt_pm_nonce = function_exists('wp_create_nonce') ? wp_create_nonce('avt_pm_nonce') : '';
+
+// Live properties list for the inspection-booking property picker,
+// and live inspection bookings for this user for Transaction History
+// — both degrade gracefully to empty if the Property Manager plugin
+// isn't active, so this file never fatals standalone.
+global $wpdb;
+$properties_list = [];
+$real_bookings = [];
+if (isset($wpdb) && $current_user_id) {
+    $properties_table = $wpdb->prefix . 'avt_properties';
+    $bookings_table = $wpdb->prefix . 'avt_property_bookings';
+
+    if ($wpdb->get_var("SHOW TABLES LIKE '$properties_table'") === $properties_table) {
+        $properties_list = $wpdb->get_results(
+            "SELECT id, title, city, state FROM $properties_table WHERE status = 'approved' ORDER BY created_at DESC LIMIT 40",
+            ARRAY_A
+        );
+    }
+
+    if ($wpdb->get_var("SHOW TABLES LIKE '$bookings_table'") === $bookings_table
+        && $wpdb->get_var("SHOW TABLES LIKE '$properties_table'") === $properties_table) {
+        $real_bookings = $wpdb->get_results($wpdb->prepare(
+            "SELECT b.*, p.title AS property_title FROM $bookings_table b
+             LEFT JOIN $properties_table p ON p.id = b.property_id
+             WHERE b.user_id = %d ORDER BY b.created_at DESC LIMIT 10",
+            $current_user_id
+        ), ARRAY_A);
+    }
+}
+
+$T = [
+    'id'    => 'TX-2291-AR',
+    'init'  => strtoupper(substr($current_user_name, 0, 1)),
+    'name'  => $current_user_name,
+    'tier'  => 'Silver',
+    'score' => 78,
+];
+$W = [
+    'short' => '0x4F2c...9E1b',
+    'full'  => '0x4F2c8aD19bE7C402f1A6dE32f7C901aB9eE19E1b',
+    'bal'   => '0.00 USDT',
+];
+$STATS = [
+    ['i' => 'fa-house-chimney', 'v' => 5,  'l' => 'Rented Accommodation'],
+    ['i' => 'fa-building',      'v' => 15, 'l' => 'Purchased Property'],
+    ['i' => 'fa-wrench',        'v' => count($real_bookings), 'l' => 'Inspection Requests'],
+];
+
+// 'action' items open a modal by id; 'href' items navigate directly.
+$GRID = [
+    ['k' => 'store',  'l' => 'Property Store',     'i' => 'fa-house',          'live' => 1, 'href' => $browse_url],
+    ['k' => 'market', 'l' => 'Marketplace',        'i' => 'fa-store',          'live' => 1, 'href' => $marketplace_url],
+    ['k' => 'svc',    'l' => 'Services & Vendors',  'i' => 'fa-helmet-safety',  'live' => 1, 'action' => 'avtServiceModal'],
+    ['k' => 'vault',  'l' => 'Asset Protection',    'i' => 'fa-shield-halved',  'live' => 1, 'href' => $browse_url],
+    ['k' => 'iot',    'l' => 'IoT Store',           'i' => 'fa-microchip',     'live' => 0],
+    ['k' => 'call',   'l' => 'Call Center',         'i' => 'fa-headset',       'live' => 0],
+    ['k' => 'insp',   'l' => 'Book Inspection',     'i' => 'fa-calendar-check','live' => 1, 'action' => 'avtInspectionModal'],
+];
+$MENU = [
+    'Account' => [
+        ['i' => 'fa-user',           'l' => 'My Profile',                'href' => $profile_url],
+        ['i' => 'fa-shield-halved',  'l' => 'Verification & TrustScore'],
+        ['i' => 'fa-file-contract',  'l' => 'My Agreements'],
+        ['i' => 'fa-calendar-check', 'l' => 'Book Inspection',            'action' => 'avtInspectionModal'],
+        ['i' => 'fa-receipt',        'l' => 'Transaction History',       'anchor' => '#avtHistory'],
+    ],
+    'Preferences' => [
+        ['i' => 'fa-bell',            'l' => 'Notifications'],
+        ['i' => 'fa-lock',            'l' => 'Security & Password'],
+        ['i' => 'fa-circle-question', 'l' => 'Help & Support'],
+    ],
+];
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+<style>
+/* ============================================================
+   THEME: black + yellow. Scoped to #avt-app for app content;
+   modals/loader/toast are teleported to <body> so they sit outside
+   #avt-app on purpose (escapes WP theme stacking-context traps) —
+   their selectors are written to work in both places.
+   ============================================================ */
+#avt-app,#avt-app *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+#avt-app{
+  font-family:'DM Sans',sans-serif;
+  max-width:480px;margin:0 auto;min-height:100vh;
+  background:#F6F8FC;color:#101828;
+  padding-bottom:88px;position:relative;
+}
+@media(min-width:600px){
+  #avt-app{max-width:540px;margin:20px auto;border-radius:24px;
+    box-shadow:0 12px 40px rgba(16,24,40,.12);overflow:hidden;min-height:auto;}
+}
+
+/* ---------- DESKTOP REFLOW (900px+) — mobile layout below this is untouched ---------- */
+@media(min-width:900px){
+  #avt-app{
+    max-width:960px;
+    display:grid;
+    grid-template-columns: 1fr 360px;
+    grid-template-areas:
+      "header header"
+      "wallet wallet"
+      "main   side";
+    gap:0 22px;
+    padding:0 24px 40px;
+    border-radius:0; box-shadow:none; background:transparent;
+  }
+  .ah{grid-area:header; border-radius:20px; margin-top:20px;}
+  .aw{grid-area:wallet; margin:-46px 0 0;}
+  .dg-main{grid-area:main; display:block;}
+  .dg-side{grid-area:side; display:block;}
+  .as{grid-template-columns:repeat(3,1fr);}
+  .qa-grid{grid-template-columns:repeat(3,1fr);}
+  .bnav{display:none;} /* desktop uses the drawer + header nav instead of a bottom bar */
+}
+
+/* HEADER */
+.ah{background:linear-gradient(160deg,#0F1115 0%,#2C2F36 100%);
+  padding:20px 18px 66px;position:relative;overflow:hidden;}
+.ah::after{content:'';position:absolute;top:-50px;right:-30px;
+  width:160px;height:160px;border-radius:50%;
+  border:2px solid rgba(245,197,24,.25);}
+.ah-row{display:flex;align-items:center;justify-content:space-between;position:relative;z-index:1;}
+.ah-ibtn{width:38px;height:38px;border-radius:11px;background:rgba(255,255,255,.13);
+  border:none;color:#fff;font-size:16px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;}
+.ah-ibtn:hover{background:rgba(255,255,255,.22);}
+.ah-profile{display:flex;align-items:center;gap:8px;
+  background:rgba(255,255,255,.10);padding:5px 12px 5px 5px;border-radius:30px;}
+.ah-av{width:32px;height:32px;border-radius:50%;
+  background:linear-gradient(135deg,#D4A800,#F5C518);
+  color:#0F1115;font-weight:800;font-family:'Syne',sans-serif;
+  display:flex;align-items:center;justify-content:center;font-size:14px;}
+.ah-name{color:#fff;font-size:13px;font-weight:600;}
+.ah-uid{position:relative;z-index:1;margin-top:18px;
+  font-size:11px;color:rgba(255,255,255,.6);}
+.ah-uid b{display:block;color:#fff;font-size:17px;
+  font-family:'Syne',sans-serif;font-weight:700;letter-spacing:1px;margin-top:2px;}
+
+/* WALLET CARD */
+.aw{position:relative;z-index:2;margin:-46px 18px 0;
+  background:#fff;border-radius:16px;
+  box-shadow:0 4px 20px rgba(16,24,40,.08);padding:16px;}
+.aw-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:12px;}
+.aw-label{font-size:10px;color:#667085;text-transform:uppercase;
+  letter-spacing:.6px;font-weight:700;margin-bottom:3px;
+  display:flex;align-items:center;gap:5px;}
+.aw-demo{font-size:9px;font-weight:800;color:#D4A800;
+  background:#FFFAED;padding:1px 7px;border-radius:20px;}
+.aw-addr{font-size:13px;font-weight:700;font-family:'Syne',sans-serif;
+  color:#101828;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.aw-tier{display:inline-flex;align-items:center;gap:4px;
+  background:#F0F0F1;color:#0F1115;font-size:11px;
+  font-weight:800;padding:5px 12px;border-radius:20px;white-space:nowrap;}
+.aw-bot{display:flex;justify-content:space-between;align-items:center;
+  padding-top:12px;border-top:1px dashed #EAECF0;}
+.aw-bal{font-size:11px;color:#667085;}
+.aw-bal b{color:#101828;font-size:13px;font-family:'Syne',sans-serif;}
+.aw-actions{display:flex;align-items:center;gap:14px;}
+.aw-btn{background:none;border:none;font-size:11px;font-weight:700;
+  color:#0F1115;cursor:pointer;display:flex;align-items:center;gap:4px;
+  padding:4px 8px;border-radius:8px;transition:background .15s;}
+.aw-btn:hover{background:#F0F0F1;}
+
+/* STATS */
+.as{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:18px 18px 0;}
+.as-card{background:#fff;border-radius:12px;border:1px solid #EAECF0;
+  padding:14px 8px;text-align:center;}
+.as-ico{width:30px;height:30px;border-radius:9px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:13px;margin:0 auto 8px;background:#F0F0F1;color:#0F1115;}
+.as-val{font-size:1.35rem;font-weight:800;color:#0F1115;
+  font-family:'Syne',sans-serif;line-height:1;}
+.as-lbl{font-size:10px;color:#667085;margin-top:5px;font-weight:600;line-height:1.3;}
+
+/* ADS */
+.ads-wrap{display:flex;gap:10px;margin:18px 18px 0;
+  overflow-x:auto;scrollbar-width:none;padding-bottom:2px;}
+.ads-wrap::-webkit-scrollbar{display:none;}
+.ad-card{flex:0 0 auto;width:160px;
+  background:linear-gradient(135deg,#FFFAED,#fff);
+  border:1px solid #F3E3A8;border-radius:12px;padding:12px;}
+.ad-tag{font-size:9px;font-weight:800;color:#D4A800;
+  text-transform:uppercase;letter-spacing:.5px;}
+.ad-t{font-size:12px;font-weight:700;color:#101828;margin-top:5px;line-height:1.3;}
+.ad-s{font-size:10px;color:#667085;margin-top:3px;}
+
+/* ADVERTISE BTN ROW */
+.adv-row{margin:10px 18px 0;}
+.adv-btn{display:inline-flex;align-items:center;gap:6px;
+  background:linear-gradient(135deg,#D4A800,#F5C518);
+  color:#0F1115;border:none;border-radius:20px;
+  padding:8px 18px;font-size:12px;font-weight:800;
+  font-family:'Syne',sans-serif;cursor:pointer;
+  box-shadow:0 3px 12px rgba(212,168,0,.35);
+  transition:transform .15s;}
+.adv-btn:hover{transform:scale(1.03);}
+
+/* SECTION TITLE */
+.sec-ttl{font-size:11px;font-weight:800;color:#667085;
+  margin:22px 18px 10px;text-transform:uppercase;letter-spacing:.7px;}
+
+/* QUICK ACCESS GRID */
+.qa-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:0 18px;}
+.qa-item{background:#fff;border:1px solid #EAECF0;border-radius:12px;
+  padding:16px 8px 12px;display:flex;flex-direction:column;
+  align-items:center;gap:7px;text-decoration:none;color:inherit;
+  position:relative;cursor:pointer;
+  transition:transform .15s,border-color .15s,background .15s;
+  font-family:'DM Sans',sans-serif;
+  width:100%; background-clip:padding-box;
+}
+button.qa-item{ border:1px solid #EAECF0; }
+.qa-item:active{transform:scale(.95);}
+.qa-item:hover:not(.qa-item--soon){border-color:#0F1115;background:#F6F6F7;}
+.qa-item--soon{opacity:.55;cursor:not-allowed;}
+.qa-ico{width:42px;height:42px;border-radius:12px;
+  background:#F0F0F1;color:#0F1115;
+  display:flex;align-items:center;justify-content:center;font-size:17px;}
+.qa-lbl{font-size:11px;font-weight:700;text-align:center;
+  line-height:1.3;color:#101828;}
+.qa-soon{position:absolute;top:7px;right:7px;font-size:8px;
+  font-weight:800;color:#92400E;background:#FEF3C7;
+  padding:2px 6px;border-radius:20px;}
+
+/* TRANSACTIONS / ACTIVITY */
+.tx-list{margin:0 18px;display:flex;flex-direction:column;gap:8px;}
+.tx-item{display:flex;align-items:center;gap:12px;
+  background:#fff;border:1px solid #EAECF0;border-radius:12px;padding:12px;}
+.tx-ico{width:36px;height:36px;border-radius:10px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:14px;flex-shrink:0;}
+.tx-ico.in{background:#ECFDF5;color:#059669;}
+.tx-ico.out{background:#FEF2F2;color:#DC2626;}
+.tx-ico.booking{background:#FFFAED;color:#D4A800;}
+.tx-info{flex:1;min-width:0;}
+.tx-t{font-size:12px;font-weight:700;color:#101828;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.tx-m{font-size:11px;color:#667085;margin-top:1px;}
+.tx-amt{font-size:13px;font-weight:800;font-family:'Syne',sans-serif;white-space:nowrap;}
+.tx-amt.in{color:#059669;}
+.tx-amt.out{color:#DC2626;}
+.tx-status{font-size:10px;font-weight:800;padding:3px 9px;border-radius:20px;white-space:nowrap;}
+.tx-status.pending{background:#FEF3C7;color:#92400E;}
+.tx-status.confirmed{background:#ECFDF3;color:#027A48;}
+.tx-status.declined{background:#FEF2F2;color:#DC2626;}
+.tx-real-tag{font-size:8.5px;font-weight:800;color:#D4A800;background:#FFFAED;padding:1px 6px;border-radius:20px;margin-left:6px;vertical-align:middle;}
+
+/* BOTTOM NAV */
+.bnav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);
+  width:100%;max-width:480px;background:#fff;
+  border-top:1px solid #EAECF0;
+  display:flex;justify-content:space-around;align-items:center;
+  padding:10px 0 calc(10px + env(safe-area-inset-bottom));
+  z-index:100;}
+@media(min-width:600px){.bnav{max-width:540px;position:absolute;border-radius:0 0 24px 24px;}}
+.bn-item{display:flex;flex-direction:column;align-items:center;gap:3px;
+  color:#667085;font-size:9.5px;font-weight:700;text-decoration:none;flex:1;
+  background:none;border:none;cursor:pointer;font-family:'DM Sans',sans-serif;}
+.bn-item.active{color:#0F1115;}
+.bn-item i{font-size:18px;}
+
+/* DRAWER */
+.drw-ov{position:fixed !important;inset:0 !important;background:rgba(16,24,40,.52) !important;
+  z-index:9998 !important;opacity:0 !important;pointer-events:none !important;
+  transition:opacity .25s ease !important;}
+.drw-ov.on{opacity:1 !important;pointer-events:all !important;}
+.drw-panel{position:fixed !important;top:0 !important;left:0 !important;bottom:0 !important;
+  width:80% !important;max-width:300px !important;background:#fff !important;z-index:9999 !important;
+  transform:translateX(-110%) !important;transition:transform .28s ease !important;
+  display:flex !important;flex-direction:column !important;overflow-y:auto !important;}
+.drw-ov.on .drw-panel{transform:translateX(0) !important;}
+.drw-head{background:linear-gradient(160deg,#0F1115,#2C2F36);padding:24px 18px 20px;color:#fff;position:relative;}
+.drw-close{position:absolute;top:14px;right:14px;width:30px;height:30px;border-radius:9px;border:none;
+  background:rgba(255,255,255,.15);color:#fff;font-size:13px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;}
+.drw-av{width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#D4A800,#F5C518);
+  color:#0F1115;font-weight:800;font-family:'Syne',sans-serif;
+  display:flex;align-items:center;justify-content:center;font-size:20px;margin-bottom:10px;}
+.drw-name{font-size:16px;font-weight:800;font-family:'Syne',sans-serif;}
+.drw-id{font-size:11px;color:rgba(255,255,255,.65);margin-top:2px;}
+.drw-tier{display:inline-flex;align-items:center;gap:5px;background:rgba(255,255,255,.15);
+  color:#F5C518;font-size:10px;font-weight:800;padding:4px 10px;border-radius:20px;margin-top:10px;}
+.drw-nav{padding:8px 10px;flex:1;}
+.drw-sec{font-size:10px;font-weight:800;color:#667085;text-transform:uppercase;
+  letter-spacing:.7px;padding:14px 10px 6px;}
+.drw-item{display:flex;align-items:center;gap:12px;padding:11px 10px;border-radius:10px;
+  color:#101828;text-decoration:none;font-size:13px;font-weight:600;cursor:pointer;
+  background:none;border:none;width:100%;text-align:left;font-family:'DM Sans',sans-serif;}
+.drw-item:hover{background:#F6F8FC;}
+.drw-item i{width:20px;text-align:center;color:#0F1115;font-size:15px;}
+.drw-item.danger{color:#DC2626;}
+.drw-item.danger i{color:#DC2626;}
+.drw-foot{padding:14px 18px;border-top:1px solid #EAECF0;font-size:10px;color:#667085;text-align:center;}
+
+/* MODALS */
+.avt-modal-ov{display:none !important;position:fixed !important;inset:0 !important;
+  background:rgba(16,24,40,.55) !important;z-index:99999 !important;
+  align-items:flex-end !important;justify-content:cent
