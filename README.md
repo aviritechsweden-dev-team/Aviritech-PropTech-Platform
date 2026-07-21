@@ -25,6 +25,7 @@ Ready for Africa.
 - Flutterwave Integration
 - WooCommerce Integration
 - Authentication
+- Trust-minimized system
 - Digital Utility Payments
 - Dashboard Analytics
 - Property History
