@@ -24,7 +24,7 @@ Ready for Africa.
 - Secure Payments
 - Flutterwave Integration
 - WooCommerce Integration
-- Ultimate Member Authentication
+- Authentication
 - Digital Utility Payments
 - Dashboard Analytics
 - Property History
@@ -42,9 +42,10 @@ Ready for Africa.
 - HTML5
 - CSS3
 - WooCommerce
-- Ultimate Member
 - Flutterwave API
 - Google Cloud
+- Custom Plugin, Themes and Add-ons
+- AI Knowledge Base chat model 
 
 ---
 
@@ -53,7 +54,7 @@ Ready for Africa.
 Beta Development
 
 Development Lead:
-Julius Raphael Ochai
+Engr Julius Raphael Ochai
 
 Project Manager:
 Stephen Adeboyejo
@@ -61,6 +62,8 @@ Stephen Adeboyejo
 Project Sponsor:
 Aviritech
 
+Project Owner:
+Aviritech Limited 
 ---
 
 ## Project Vision
